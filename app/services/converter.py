@@ -22,9 +22,204 @@ def generate_id(prefix: str = "") -> str:
 
 class FormatConverter:
     """Convert between different API formats"""
-    
+
+    # ==================== Message Sanitization ====================
+
+    @staticmethod
+    def _sanitize_anthropic_messages(messages: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+        """Ensure every tool_use block is immediately followed by a matching tool_result.
+
+        Bedrock Claude validates that:
+          1. Every tool_use id has a tool_result with the same tool_use_id in the
+             very next user message.
+          2. text content blocks are non-empty.
+
+        Strategy: walk the messages in order.  For each assistant message, collect
+        the tool_use ids it emits.  Then look at the immediately following user
+        message to see which ids have a tool_result.  Any tool_use id that is NOT
+        covered by the next user message is dropped from the assistant message.
+        If the assistant message becomes empty after dropping, it is removed too.
+        """
+        if not messages:
+            return messages
+
+        result = list(messages)  # shallow copy so we can patch in-place by index
+
+        i = 0
+        while i < len(result):
+            msg = result[i]
+            role = msg.get("role", "")
+            content = msg.get("content", "")
+
+            # --- collect tool_use ids emitted by this assistant message ---
+            if role == "assistant" and isinstance(content, list):
+                tool_use_ids = [
+                    b.get("id", "") for b in content
+                    if b.get("type") == "tool_use" and b.get("id", "")
+                ]
+
+                if tool_use_ids:
+                    # Find the immediately following user message
+                    next_user_content: List[Dict] = []
+                    if i + 1 < len(result):
+                        next_msg = result[i + 1]
+                        if next_msg.get("role") == "user" and isinstance(next_msg.get("content"), list):
+                            next_user_content = next_msg["content"]
+
+                    covered_ids = {
+                        b.get("tool_use_id", "")
+                        for b in next_user_content
+                        if b.get("type") == "tool_result"
+                    }
+
+                    # Drop tool_use blocks whose id is not covered
+                    new_content = [
+                        b for b in content
+                        if not (b.get("type") == "tool_use" and b.get("id", "") not in covered_ids)
+                    ]
+
+                    if not new_content:
+                        # Entire assistant message was tool_use with no results — remove it
+                        result.pop(i)
+                        continue
+                    elif len(new_content) != len(content):
+                        result[i] = {**msg, "content": new_content}
+
+            # --- drop tool_result blocks whose tool_use_id has no preceding tool_use ---
+            # (handles orphaned tool_result left after prior cleanup)
+            elif role == "user" and isinstance(content, list):
+                # Collect all tool_use ids seen so far (in result[:i])
+                seen_tool_use_ids: set = set()
+                for prev in result[:i]:
+                    prev_content = prev.get("content", "")
+                    if isinstance(prev_content, list):
+                        for b in prev_content:
+                            if b.get("type") == "tool_use" and b.get("id", ""):
+                                seen_tool_use_ids.add(b["id"])
+
+                new_content = [
+                    b for b in content
+                    if not (
+                        b.get("type") == "tool_result"
+                        and b.get("tool_use_id", "") not in seen_tool_use_ids
+                    )
+                ]
+                if not new_content:
+                    result.pop(i)
+                    continue
+                elif len(new_content) != len(content):
+                    result[i] = {**msg, "content": new_content}
+
+            i += 1
+
+        return result
+
+    @staticmethod
+    def _sanitize_openai_messages(messages: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+        """Ensure every tool_calls entry (or Anthropic-style tool_use in content array)
+        has a matching tool-role message immediately after.
+
+        Walk in order: for each assistant message with tool_calls or tool_use content
+        blocks, look ahead to collect which ids are answered.  Drop unanswered ones.
+        """
+        if not messages:
+            return messages
+
+        result = list(messages)
+
+        i = 0
+        while i < len(result):
+            msg = result[i]
+            if msg.get("role") == "assistant":
+                tool_calls = msg.get("tool_calls") or []
+                content = msg.get("content")
+
+                # Also collect Anthropic-style tool_use blocks inside content array
+                content_tool_uses = []
+                if isinstance(content, list):
+                    content_tool_uses = [
+                        b for b in content if isinstance(b, dict) and b.get("type") == "tool_use"
+                    ]
+
+                all_tool_ids = (
+                    [tc.get("id", "") for tc in tool_calls] +
+                    [b.get("id", "") for b in content_tool_uses]
+                )
+
+                if all_tool_ids:
+                    # Collect covered ids from immediately following tool messages
+                    # Also accept Anthropic-style tool_result blocks inside user content
+                    covered_ids: set = set()
+                    j = i + 1
+                    while j < len(result):
+                        next_msg = result[j]
+                        next_role = next_msg.get("role", "")
+                        if next_role == "tool":
+                            tid = next_msg.get("tool_call_id", "")
+                            if tid:
+                                covered_ids.add(tid)
+                            j += 1
+                        elif next_role == "user":
+                            next_content = next_msg.get("content", "")
+                            if isinstance(next_content, list):
+                                has_tool_result = any(
+                                    b.get("type") == "tool_result"
+                                    for b in next_content if isinstance(b, dict)
+                                )
+                                if has_tool_result:
+                                    for b in next_content:
+                                        if isinstance(b, dict) and b.get("type") == "tool_result":
+                                            tid = b.get("tool_use_id", "")
+                                            if tid:
+                                                covered_ids.add(tid)
+                                    j += 1
+                                    continue
+                            break
+                        else:
+                            break
+
+                    uncovered = [tid for tid in all_tool_ids if tid not in covered_ids]
+                    if uncovered:
+                        uncovered_set = set(uncovered)
+                        # Filter tool_calls
+                        valid_calls = [tc for tc in tool_calls if tc.get("id", "") not in uncovered_set]
+                        # Filter content tool_use blocks
+                        new_content = content
+                        if isinstance(content, list):
+                            new_content = [
+                                b for b in content
+                                if not (isinstance(b, dict) and b.get("type") == "tool_use"
+                                        and b.get("id", "") in uncovered_set)
+                            ]
+                            # Also drop empty text blocks
+                            new_content = [
+                                b for b in new_content
+                                if not (isinstance(b, dict) and b.get("type") == "text"
+                                        and not b.get("text", "").strip())
+                            ]
+
+                        new_msg = {**msg}
+                        if valid_calls != tool_calls:
+                            if valid_calls:
+                                new_msg["tool_calls"] = valid_calls
+                            else:
+                                new_msg.pop("tool_calls", None)
+                        if new_content != content:
+                            new_msg["content"] = new_content if new_content else None
+
+                        # Drop message entirely if nothing left
+                        has_content = bool(new_msg.get("content")) or bool(new_msg.get("tool_calls"))
+                        if not has_content:
+                            result.pop(i)
+                            continue
+                        result[i] = new_msg
+
+            i += 1
+
+        return result
+
     # ==================== Anthropic -> GenAI ====================
-    
+
     @staticmethod
     def anthropic_to_genai(request: Dict[str, Any]) -> Dict[str, Any]:
         """Convert Anthropic Messages API request to GenAI format
@@ -38,22 +233,28 @@ class FormatConverter:
         - Documents (PDF, text)
         """
         contents = []
-        
+
+        # Sanitize: drop orphaned tool_use blocks before conversion
+        messages = FormatConverter._sanitize_anthropic_messages(request.get("messages", []))
+
         # Convert messages
-        for msg in request.get("messages", []):
+        for msg in messages:
             role = "model" if msg["role"] == "assistant" else "user"
             parts = []
             
             content = msg.get("content", "")
             
             if isinstance(content, str):
-                parts.append({"text": content})
+                if content.strip():
+                    parts.append({"text": content})
             elif isinstance(content, list):
                 for block in content:
                     block_type = block.get("type", "")
                     
                     if block_type == "text":
-                        parts.append({"text": block.get("text", "")})
+                        text = block.get("text", "")
+                        if text.strip():
+                            parts.append({"text": text})
                     
                     elif block_type == "image":
                         source = block.get("source", {})
@@ -109,6 +310,10 @@ class FormatConverter:
                                 else:
                                     text_parts.append(str(c))
                             tool_content = "\n".join(text_parts) if text_parts else json.dumps(tool_content)
+                        if not isinstance(tool_content, str):
+                            tool_content = json.dumps(tool_content)
+                        if not tool_content.strip():
+                            tool_content = "(empty)"
                         
                         # tool_result references tool_use_id, map to functionResponse
                         tool_use_id = block.get("tool_use_id", "")
@@ -327,11 +532,14 @@ class FormatConverter:
         """
         contents = []
         system_instruction = None
-        
-        for msg in request.get("messages", []):
+
+        # Sanitize: drop orphaned tool_calls with no matching tool response
+        messages = FormatConverter._sanitize_openai_messages(request.get("messages", []))
+
+        for msg in messages:
             role = msg.get("role", "user")
             content = msg.get("content")
-            
+
             # Handle system message (or developer message in newer API)
             if role in ("system", "developer"):
                 if isinstance(content, str):
@@ -358,6 +566,8 @@ class FormatConverter:
             if role == "tool":
                 tool_call_id = msg.get("tool_call_id", "")
                 tool_content = content if isinstance(content, str) else json.dumps(content) if content else ""
+                if not tool_content.strip():
+                    tool_content = "(empty)"
                 parts = [{
                     "functionResponse": {
                         "name": tool_call_id,
@@ -394,13 +604,46 @@ class FormatConverter:
                 elif isinstance(content, list):
                     for part in content:
                         if isinstance(part, str):
-                            parts.append({"text": part})
+                            if part.strip():
+                                parts.append({"text": part})
                         elif isinstance(part, dict):
                             part_type = part.get("type", "")
                             if part_type == "text":
                                 text = part.get("text", "")
-                                if text:
+                                if text and text.strip():
                                     parts.append({"text": text})
+                            elif part_type == "tool_use":
+                                # Anthropic-style tool_use block inside OpenAI content array
+                                try:
+                                    args = part.get("input", {})
+                                    if isinstance(args, str):
+                                        args = json.loads(args)
+                                except (json.JSONDecodeError, TypeError):
+                                    args = {}
+                                parts.append({
+                                    "functionCall": {
+                                        "name": part.get("name", ""),
+                                        "args": args,
+                                        "id": part.get("id", "")
+                                    }
+                                })
+                            elif part_type == "tool_result":
+                                # Anthropic-style tool_result block inside OpenAI content array
+                                tool_content = part.get("content", "")
+                                if isinstance(tool_content, list):
+                                    text_parts = [
+                                        c.get("text", "") for c in tool_content
+                                        if isinstance(c, dict) and c.get("type") == "text"
+                                    ]
+                                    tool_content = "\n".join(text_parts) if text_parts else json.dumps(tool_content)
+                                tool_use_id = part.get("tool_use_id", "")
+                                parts.append({
+                                    "functionResponse": {
+                                        "name": tool_use_id,
+                                        "response": {"output": tool_content},
+                                        "id": tool_use_id
+                                    }
+                                })
                             elif part_type == "image_url":
                                 image_url = part.get("image_url", {})
                                 url = image_url.get("url", "") if isinstance(image_url, dict) else str(image_url)
