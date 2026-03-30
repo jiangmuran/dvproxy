@@ -1,0 +1,222 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>DVProxy Admin - Login</title>
+    <link rel="stylesheet" href="/static/css/admin.css" />
+  </head>
+  <body class="login-page">
+    <div class="login-container">
+      <div class="login-card">
+        <div class="login-header">
+          <h1>DVProxy</h1>
+          <p>Admin Panel</p>
+        </div>
+
+        <form
+          id="loginForm"
+          class="login-form"
+          onsubmit="return handleLogin(event);"
+        >
+          <div class="form-group">
+            <label for="username">Username</label>
+            <input
+              type="text"
+              id="username"
+              name="username"
+              required
+              placeholder="Enter username"
+              autocomplete="username"
+            />
+          </div>
+
+          <div class="form-group">
+            <label for="totp">TOTP Code</label>
+            <input
+              type="text"
+              id="totp"
+              name="totp"
+              required
+              placeholder="6-digit code"
+              autocomplete="one-time-code"
+              maxlength="6"
+              pattern="[0-9]{6}"
+              inputmode="numeric"
+            />
+          </div>
+
+          <button type="submit" class="btn btn-primary btn-block" id="loginBtn">
+            Sign In
+          </button>
+
+          <div id="errorMessage" class="error-message hidden"></div>
+        </form>
+
+        <div class="login-footer">
+          <a
+            href="#"
+            onclick="
+              showQRCode();
+              return false;
+            "
+            >Setup TOTP</a
+          >
+        </div>
+      </div>
+    </div>
+
+    <!-- QR Code Modal -->
+    <div id="qrModal" class="modal hidden">
+      <div class="modal-content">
+        <span class="close" onclick="closeQRModal()">&times;</span>
+        <h2>Setup TOTP Authentication</h2>
+        <p style="color: var(--text-secondary); margin-bottom: 16px">
+          Scan this QR code with your authenticator app (Google Authenticator,
+          Authy, etc.)
+        </p>
+        <div id="qrCode" class="qr-code"></div>
+        <p
+          id="qrMessage"
+          style="text-align: center; color: var(--text-muted); margin-top: 16px"
+        ></p>
+        <div
+          class="form-actions"
+          style="border-top: none; padding-top: 0; justify-content: center"
+        >
+          <button class="btn btn-primary" onclick="closeQRModal()">Done</button>
+        </div>
+      </div>
+    </div>
+
+    <script>
+      // Check if already logged in
+      (function () {
+        var token = localStorage.getItem('dvproxy_token');
+        if (token) {
+          fetch('/admin/verify', {
+            headers: { Authorization: 'Bearer ' + token },
+          }).then(function (r) {
+            if (r.ok) window.location.href = '/admin/panel';
+          });
+        }
+      })();
+
+      // Auto-focus username field
+      document.getElementById('username').focus();
+
+      // Handle login form
+      function handleLogin(e) {
+        e.preventDefault();
+
+        var loginBtn = document.getElementById('loginBtn');
+        var errorMsg = document.getElementById('errorMessage');
+        errorMsg.classList.add('hidden');
+
+        var username = document.getElementById('username').value.trim();
+        var totp = document.getElementById('totp').value.trim();
+
+        // Validate
+        if (!username || !totp) {
+          errorMsg.textContent = 'Please fill in all fields';
+          errorMsg.classList.remove('hidden');
+          return false;
+        }
+
+        if (!/^\d{6}$/.test(totp)) {
+          errorMsg.textContent = 'TOTP code must be 6 digits';
+          errorMsg.classList.remove('hidden');
+          return false;
+        }
+
+        // Show loading state
+        loginBtn.disabled = true;
+        loginBtn.innerHTML = '<span class="spinner"></span> Signing In...';
+
+        fetch('/admin/login', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ username: username, totp_code: totp }),
+        })
+          .then(function (response) {
+            if (response.ok) {
+              return response.json().then(function (data) {
+                localStorage.setItem('dvproxy_token', data.access_token);
+                window.location.href = '/admin/panel';
+              });
+            } else {
+              return response.json().then(function (error) {
+                errorMsg.textContent = error.detail || 'Invalid credentials';
+                errorMsg.classList.remove('hidden');
+                document.getElementById('totp').value = '';
+                document.getElementById('totp').focus();
+              });
+            }
+          })
+          .catch(function (err) {
+            console.error('Login error:', err);
+            errorMsg.textContent = 'Connection error. Please try again.';
+            errorMsg.classList.remove('hidden');
+          })
+          .finally(function () {
+            loginBtn.disabled = false;
+            loginBtn.innerHTML = 'Sign In';
+          });
+
+        return false;
+      }
+
+      function showQRCode() {
+        var qrCodeDiv = document.getElementById('qrCode');
+        var qrMessage = document.getElementById('qrMessage');
+        qrCodeDiv.innerHTML = '<span class="spinner"></span> Loading...';
+        qrMessage.textContent = '';
+        document.getElementById('qrModal').classList.remove('hidden');
+
+        fetch('/admin/totp-qr')
+          .then(function (response) {
+            return response.json();
+          })
+          .then(function (data) {
+            if (data.qr_code) {
+              qrCodeDiv.innerHTML =
+                '<img src="' +
+                data.qr_code +
+                '" alt="QR Code" style="max-width: 200px;">';
+              qrMessage.textContent =
+                data.message || 'Scan with your authenticator app';
+            } else if (data.error) {
+              qrCodeDiv.innerHTML =
+                '<p style="color: var(--danger);">' + data.error + '</p>';
+              qrMessage.textContent = data.message || '';
+            }
+          })
+          .catch(function (err) {
+            console.error('QR code error:', err);
+            qrCodeDiv.innerHTML =
+              '<p style="color: var(--danger);">Failed to load QR code. You must be logged in first.</p>';
+          });
+      }
+
+      function closeQRModal() {
+        document.getElementById('qrModal').classList.add('hidden');
+      }
+
+      // Close modal on Escape key
+      document.addEventListener('keydown', function (e) {
+        if (e.key === 'Escape') {
+          closeQRModal();
+        }
+      });
+
+      // Close modal on backdrop click
+      document
+        .getElementById('qrModal')
+        .addEventListener('click', function (e) {
+          if (e.target.classList.contains('modal')) {
+            closeQRModal();
+          }
+        });
+    </script>
+  </body>
+</html>

@@ -1,0 +1,28 @@
+# DVProxy - API Proxy with Admin Panel
+# FastAPI core
+fastapi>=0.109.0
+uvicorn[standard]>=0.27.0
+python-multipart>=0.0.6
+
+# Database
+sqlalchemy>=2.0.0
+aiosqlite>=0.19.0
+
+# Authentication
+pyotp>=2.9.0
+python-jose[cryptography]>=3.3.0
+passlib[bcrypt]>=1.7.4
+
+# HTTP client for upstream
+httpx[socks]>=0.26.0
+
+# Templates
+jinja2>=3.1.0
+
+# Validation
+pydantic>=2.5.0
+pydantic-settings>=2.1.0
+
+# Utils
+qrcode[pil]>=7.4.0
+python-dotenv>=1.0.0

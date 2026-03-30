@@ -1,0 +1,558 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>DVProxy Admin - Dashboard</title>
+    <link rel="stylesheet" href="/static/css/admin.css" />
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  </head>
+  <body>
+    <nav class="navbar">
+      <div class="nav-brand">
+        <span class="logo">🔷</span>
+        <span>DVProxy</span>
+      </div>
+      <div class="nav-menu">
+        <a href="#dashboard" class="nav-link active" data-section="dashboard"
+          >Dashboard</a
+        >
+        <a href="#keys" class="nav-link" data-section="keys">API Keys</a>
+        <a href="#analytics" class="nav-link" data-section="analytics"
+          >Analytics</a
+        >
+        <a href="#deepvlab" class="nav-link" data-section="deepvlab"
+          >DeepVLab</a
+        >
+      </div>
+      <div class="nav-actions">
+        <div class="user-info">
+          <div class="user-avatar" id="userAvatar">A</div>
+          <span id="username"></span>
+        </div>
+        <button class="btn btn-sm btn-secondary" onclick="logout()">
+          Logout
+        </button>
+      </div>
+    </nav>
+
+    <main class="main-content">
+      <!-- Dashboard Section -->
+      <section id="dashboard" class="section active">
+        <h1>Dashboard</h1>
+
+        <div class="stats-grid">
+          <div class="stat-card">
+            <div class="stat-icon">📊</div>
+            <div class="stat-content">
+              <span class="stat-value" id="totalRequests">-</span>
+              <span class="stat-label">Total Requests</span>
+            </div>
+          </div>
+          <div class="stat-card">
+            <div class="stat-icon">📝</div>
+            <div class="stat-content">
+              <span class="stat-value" id="totalTokens">-</span>
+              <span class="stat-label">Total Tokens</span>
+            </div>
+          </div>
+          <div class="stat-card">
+            <div class="stat-icon">💰</div>
+            <div class="stat-content">
+              <span class="stat-value" id="totalCost">-</span>
+              <span class="stat-label">Est. Cost</span>
+            </div>
+          </div>
+          <div class="stat-card">
+            <div class="stat-icon">🔑</div>
+            <div class="stat-content">
+              <span class="stat-value" id="activeKeys">-</span>
+              <span class="stat-label">Active Keys</span>
+            </div>
+          </div>
+        </div>
+
+        <div class="stats-grid stats-secondary">
+          <div class="stat-card stat-small">
+            <span class="stat-label">Today's Requests</span>
+            <span class="stat-value" id="todayRequests">-</span>
+          </div>
+          <div class="stat-card stat-small">
+            <span class="stat-label">Week's Requests</span>
+            <span class="stat-value" id="weekRequests">-</span>
+          </div>
+          <div class="stat-card stat-small">
+            <span class="stat-label">Unique IPs</span>
+            <span class="stat-value" id="uniqueIPs">-</span>
+          </div>
+        </div>
+
+        <div class="charts-row">
+          <div class="chart-card">
+            <h3>Usage Trend (30 days)</h3>
+            <canvas id="trendChart"></canvas>
+          </div>
+          <div class="chart-card">
+            <h3>Model Distribution</h3>
+            <canvas id="modelChart"></canvas>
+          </div>
+        </div>
+
+        <div class="charts-row">
+          <div class="chart-card">
+            <h3>Endpoint Distribution</h3>
+            <canvas id="endpointChart"></canvas>
+          </div>
+          <div class="chart-card">
+            <h3>Top IPs (Last 7 days)</h3>
+            <div id="ipTable" class="mini-table"></div>
+          </div>
+        </div>
+      </section>
+
+      <!-- API Keys Section -->
+      <section id="keys" class="section">
+        <div class="section-header">
+          <h1>API Keys</h1>
+          <button class="btn btn-primary" onclick="showCreateKeyModal()">
+            <span>+</span> New Key
+          </button>
+        </div>
+
+        <div class="table-container">
+          <table class="data-table">
+            <thead>
+              <tr>
+                <th>Name</th>
+                <th>Key</th>
+                <th>Quota</th>
+                <th>Status</th>
+                <th>Last Used</th>
+                <th>Actions</th>
+              </tr>
+            </thead>
+            <tbody id="keysTable">
+              <tr>
+                <td colspan="6" class="loading">
+                  <span class="spinner"></span> Loading...
+                </td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+      <!-- Analytics Section -->
+      <section id="analytics" class="section">
+        <h1>Analytics</h1>
+
+        <div class="filter-bar">
+          <select id="keyFilter" onchange="loadKeyStats()">
+            <option value="">All Keys</option>
+          </select>
+          <select id="daysFilter" onchange="loadAnalytics()">
+            <option value="7">Last 7 days</option>
+            <option value="30" selected>Last 30 days</option>
+            <option value="90">Last 90 days</option>
+          </select>
+        </div>
+
+        <div class="chart-card full-width">
+          <h3>Detailed Usage Trend</h3>
+          <canvas id="detailedTrendChart"></canvas>
+        </div>
+
+        <div class="charts-row">
+          <div class="chart-card">
+            <h3>Tokens by Model</h3>
+            <canvas id="modelTokensChart"></canvas>
+          </div>
+          <div class="chart-card">
+            <h3>Cost by Model</h3>
+            <canvas id="modelCostChart"></canvas>
+          </div>
+        </div>
+      </section>
+
+      <!-- DeepVLab Login Section -->
+      <section id="deepvlab" class="section">
+        <h1>Account Authentication</h1>
+
+        <!-- Account Status Card -->
+        <div class="chart-card" id="accountStatusCard">
+          <div
+            class="deepvlab-user-info"
+            id="deepvlabUserInfo"
+            style="display: none"
+          >
+            <h4>Account Linked</h4>
+            <div class="user-info-row">
+              <span class="label">Login Method</span>
+              <span class="value" id="dvLoginMethod">-</span>
+            </div>
+            <div class="user-info-row">
+              <span class="label">User ID</span>
+              <span class="value" id="dvUserId">-</span>
+            </div>
+            <div class="user-info-row">
+              <span class="label">Name</span>
+              <span class="value" id="dvUserName">-</span>
+            </div>
+            <div class="user-info-row">
+              <span class="label">Email</span>
+              <span class="value" id="dvUserEmail">-</span>
+            </div>
+            <div class="user-info-row">
+              <span class="label">Status</span>
+              <span class="value"
+                ><span class="status-badge status-active">Active</span></span
+              >
+            </div>
+            <div style="margin-top: 16px">
+              <button
+                class="btn btn-sm btn-secondary"
+                onclick="unlinkAccount()"
+              >
+                Unlink Account
+              </button>
+            </div>
+          </div>
+
+          <div id="loginMethodsContainer">
+            <h3>Choose Login Method</h3>
+            <p style="color: var(--text-secondary); margin-bottom: 24px">
+              Link your account to use its quota for API calls. Choose one of
+              the available methods below.
+            </p>
+
+            <!-- Login Method Tabs -->
+            <div class="tab-nav" id="loginTabs">
+              <button class="tab-btn active" onclick="showLoginTab('deepvlab')">
+                DeepVLab
+              </button>
+              <button
+                class="tab-btn"
+                onclick="showLoginTab('feishu')"
+                id="feishuTabBtn"
+                style="display: none"
+              >
+                Feishu
+              </button>
+              <button class="tab-btn" onclick="showLoginTab('cheetah')">
+                Cheetah OA
+              </button>
+            </div>
+
+            <!-- DeepVLab Login -->
+            <div id="deepvlabLoginTab" class="login-tab">
+              <div class="deepvlab-steps">
+                <div class="deepvlab-step">
+                  <p><strong>Generate Authorization URL</strong></p>
+                  <p>Click the button to generate a DeepVLab login URL.</p>
+                  <button
+                    class="btn btn-primary"
+                    onclick="generateAuthUrl('deepvlab')"
+                    id="generateUrlBtn"
+                  >
+                    Generate Login URL
+                  </button>
+                </div>
+
+                <div
+                  class="deepvlab-step"
+                  id="deepvlabStep2"
+                  style="display: none"
+                >
+                  <p><strong>Copy and Open in Browser</strong></p>
+                  <p>Copy this URL and open it in a new browser tab.</p>
+                  <div class="url-display">
+                    <input type="text" id="authUrl" readonly />
+                    <button class="btn btn-secondary" onclick="copyAuthUrl()">
+                      Copy
+                    </button>
+                    <button class="btn btn-secondary" onclick="openAuthUrl()">
+                      Open
+                    </button>
+                  </div>
+                </div>
+
+                <div
+                  class="deepvlab-step"
+                  id="deepvlabStep3"
+                  style="display: none"
+                >
+                  <p><strong>Paste Callback URL</strong></p>
+                  <p>
+                    After authorization, paste the
+                    <strong>entire callback URL</strong> from your browser.
+                  </p>
+                  <div class="url-display">
+                    <input
+                      type="text"
+                      id="callbackUrl"
+                      placeholder="http://localhost:7863/callback?token=...&user_id=..."
+                    />
+                    <button
+                      class="btn btn-success"
+                      onclick="processCallback('deepvlab')"
+                      id="processCallbackBtn"
+                    >
+                      Complete Login
+                    </button>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <!-- Feishu Login -->
+            <div id="feishuLoginTab" class="login-tab" style="display: none">
+              <div class="deepvlab-steps">
+                <div class="deepvlab-step">
+                  <p><strong>Generate Feishu Authorization URL</strong></p>
+                  <p>Click the button to generate a Feishu OAuth login URL.</p>
+                  <button
+                    class="btn btn-primary"
+                    onclick="generateAuthUrl('feishu')"
+                    id="feishuGenerateBtn"
+                  >
+                    <img
+                      src="https://res.ainirobot.com/orics/down/v2_k005_20250904_c768e6a4/feishu.ico"
+                      alt=""
+                      style="
+                        width: 16px;
+                        height: 16px;
+                        margin-right: 6px;
+                        vertical-align: middle;
+                      "
+                    />
+                    Generate Feishu URL
+                  </button>
+                </div>
+
+                <!-- Auto-generated URL mode -->
+                <div
+                  class="deepvlab-step"
+                  id="feishuStep2"
+                  style="display: none"
+                >
+                  <p><strong>Copy and Open in Browser</strong></p>
+                  <p>Copy this URL and complete Feishu authorization.</p>
+                  <div class="url-display">
+                    <input type="text" id="feishuAuthUrl" readonly />
+                    <button
+                      class="btn btn-secondary"
+                      onclick="copyFeishuAuthUrl()"
+                    >
+                      Copy
+                    </button>
+                    <button
+                      class="btn btn-secondary"
+                      onclick="openFeishuAuthUrl()"
+                    >
+                      Open
+                    </button>
+                  </div>
+                </div>
+
+                <!-- Manual mode instructions -->
+                <div
+                  class="deepvlab-step"
+                  id="feishuManualMode"
+                  style="display: none"
+                >
+                  <p><strong>Manual Mode - Instructions</strong></p>
+                  <div
+                    id="feishuManualInstructions"
+                    style="
+                      background: var(--bg-primary);
+                      padding: 16px;
+                      border-radius: 8px;
+                      margin-bottom: 16px;
+                      font-size: 0.9rem;
+                      line-height: 1.6;
+                    "
+                  ></div>
+                </div>
+
+                <div
+                  class="deepvlab-step"
+                  id="feishuStep3"
+                  style="display: none"
+                >
+                  <p><strong>Paste Callback URL</strong></p>
+                  <p>
+                    After Feishu authorization, paste the callback URL
+                    containing the <code>code</code> parameter.
+                  </p>
+                  <div class="url-display">
+                    <input
+                      type="text"
+                      id="feishuCallbackUrl"
+                      placeholder="http://localhost:7863/callback?code=..."
+                    />
+                    <button
+                      class="btn btn-success"
+                      onclick="processCallback('feishu')"
+                      id="feishuProcessBtn"
+                    >
+                      Complete Login
+                    </button>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <!-- Cheetah OA Login -->
+            <div id="cheetahLoginTab" class="login-tab" style="display: none">
+              <div class="deepvlab-step" style="padding-left: 0">
+                <p><strong>Login with Cheetah OA Credentials</strong></p>
+                <p style="margin-bottom: 16px">
+                  Enter your Cheetah OA email and password to login directly.
+                </p>
+
+                <form
+                  id="cheetahLoginForm"
+                  onsubmit="handleCheetahLogin(event)"
+                >
+                  <div class="form-group">
+                    <label for="cheetahEmail">Email</label>
+                    <input
+                      type="email"
+                      id="cheetahEmail"
+                      required
+                      placeholder="your.email@company.com"
+                    />
+                  </div>
+                  <div class="form-group">
+                    <label for="cheetahPassword">Password</label>
+                    <input
+                      type="password"
+                      id="cheetahPassword"
+                      required
+                      placeholder="Your OA password"
+                    />
+                  </div>
+                  <button
+                    type="submit"
+                    class="btn btn-primary"
+                    id="cheetahLoginBtn"
+                  >
+                    Login with OA
+                  </button>
+                </form>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="chart-card" style="margin-top: 24px">
+          <h3>How It Works</h3>
+          <div style="color: var(--text-secondary); line-height: 1.8">
+            <p>
+              <strong>DeepVLab OAuth:</strong> Generate URL → Login in browser →
+              Paste callback URL
+            </p>
+            <p>
+              <strong>Feishu OAuth:</strong> Generate URL → Authorize in Feishu
+              → Paste callback URL
+            </p>
+            <p>
+              <strong>Cheetah OA:</strong> Enter email/password directly (no
+              OAuth flow)
+            </p>
+            <div class="divider"></div>
+            <p style="font-size: 0.9rem">
+              <strong>Note:</strong> Your credentials are stored securely and
+              used only for API proxy requests.
+            </p>
+          </div>
+        </div>
+      </section>
+    </main>
+
+    <!-- Create/Edit Key Modal -->
+    <div id="keyModal" class="modal hidden">
+      <div class="modal-content">
+        <span class="close" onclick="closeKeyModal()">&times;</span>
+        <h2 id="keyModalTitle">Create API Key</h2>
+        <form id="keyForm">
+          <input type="hidden" id="keyId" />
+          <div class="form-group">
+            <label for="keyName">Name *</label>
+            <input
+              type="text"
+              id="keyName"
+              required
+              placeholder="e.g., Production App"
+            />
+          </div>
+          <div class="form-group">
+            <label for="keyDescription">Description</label>
+            <textarea
+              id="keyDescription"
+              placeholder="Optional description"
+              rows="2"
+            ></textarea>
+          </div>
+          <div class="form-row">
+            <div class="form-group">
+              <label for="quotaLimit">Quota Limit</label>
+              <input
+                type="number"
+                id="quotaLimit"
+                placeholder="Unlimited"
+                min="0"
+              />
+              <small>Leave empty for unlimited</small>
+            </div>
+            <div class="form-group">
+              <label for="rateLimit">Rate Limit (req/min)</label>
+              <input type="number" id="rateLimit" value="60" min="1" />
+            </div>
+          </div>
+          <div class="form-group">
+            <label class="checkbox-label">
+              <input type="checkbox" id="keyActive" checked />
+              Active
+            </label>
+          </div>
+          <div class="form-actions">
+            <button
+              type="button"
+              class="btn btn-secondary"
+              onclick="closeKeyModal()"
+            >
+              Cancel
+            </button>
+            <button type="submit" class="btn btn-primary">Save</button>
+          </div>
+        </form>
+      </div>
+    </div>
+
+    <!-- Key Created Modal -->
+    <div id="keyCreatedModal" class="modal hidden">
+      <div class="modal-content">
+        <span class="close" onclick="closeKeyCreatedModal()">&times;</span>
+        <h2>🎉 API Key Created</h2>
+        <p style="color: var(--text-secondary); margin-bottom: 16px">
+          Your new API key has been created. <strong>Copy it now</strong> - you
+          won't be able to see it again!
+        </p>
+        <div class="key-display">
+          <code id="newKeyValue"></code>
+          <button class="btn btn-sm btn-secondary" onclick="copyKey()">
+            Copy
+          </button>
+        </div>
+        <div class="form-actions" style="border-top: none; padding-top: 0">
+          <button class="btn btn-primary" onclick="closeKeyCreatedModal()">
+            Done
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <script src="/static/js/admin.js"></script>
+  </body>
+</html>
