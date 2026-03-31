@@ -1083,33 +1083,38 @@ class FormatConverter:
                         contents.append({"role": role, "parts": parts})
                 
                 elif item_type == "function_call":
-                    # Previous function call from assistant
-                    parts = [{
+                    # Previous function call from assistant — merge into last model message
+                    # if one exists, to keep text+FC in the same turn.
+                    fc_part = {
                         "functionCall": {
                             "name": item.get("name", ""),
                             "args": json.loads(item.get("arguments", "{}")) if isinstance(item.get("arguments"), str) else item.get("arguments", {}),
                             "id": item.get("call_id", item.get("id", ""))
                         }
-                    }]
-                    contents.append({"role": "model", "parts": parts})
+                    }
+                    if contents and contents[-1]["role"] == "model":
+                        contents[-1]["parts"].append(fc_part)
+                    else:
+                        contents.append({"role": "model", "parts": [fc_part]})
                 
                 elif item_type == "function_call_output":
-                    # Function result from user
+                    # Function result from user — merge into last user message if possible
                     output = item.get("output", "")
                     if not isinstance(output, str):
                         output = json.dumps(output)
                     call_id = item.get("call_id", "")
                     func_name = fc_id_to_name.get(call_id, call_id)
-                    contents.append({
-                        "role": "user",
-                        "parts": [{
-                            "functionResponse": {
-                                "name": func_name,
-                                "response": {"output": output},
-                                "id": call_id
-                            }
-                        }]
-                    })
+                    fr_part = {
+                        "functionResponse": {
+                            "name": func_name,
+                            "response": {"output": output},
+                            "id": call_id
+                        }
+                    }
+                    if contents and contents[-1]["role"] == "user":
+                        contents[-1]["parts"].append(fr_part)
+                    else:
+                        contents.append({"role": "user", "parts": [fr_part]})
                 
                 elif item_type == "reasoning":
                     # Reasoning block
