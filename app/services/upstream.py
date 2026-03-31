@@ -167,11 +167,25 @@ class UpstreamClient:
                             data = line[6:]
                             if data == "[DONE]":
                                 logger.debug(f"Stream completed with {chunk_count} chunks")
+                                logger.info(f"Stream [DONE] after {chunk_count} chunks")
                                 return
                             
                             try:
                                 parsed = json.loads(data)
                                 chunk_count += 1
+                                # Log finishReason at INFO level for production diagnostics
+                                candidates = parsed.get("candidates", [])
+                                if candidates:
+                                    c = candidates[0]
+                                    fr = c.get("finishReason")
+                                    if fr:
+                                        parts = c.get("content", {}).get("parts", [])
+                                        part_types = [list(p.keys()) for p in parts]
+                                        logger.info(f"Stream chunk #{chunk_count}: finishReason={fr!r} parts={part_types}")
+                                    elif logger.isEnabledFor(logging.DEBUG):
+                                        parts = c.get("content", {}).get("parts", [])
+                                        part_types = [list(p.keys()) for p in parts]
+                                        logger.debug(f"chunk #{chunk_count}: finishReason={fr!r} parts={part_types}")
                                 yield parsed
                             except json.JSONDecodeError as e:
                                 logger.warning(f"Failed to parse SSE data: {e}")

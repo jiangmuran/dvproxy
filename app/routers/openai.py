@@ -195,17 +195,8 @@ async def _stream_openai_response(
             
             candidate = candidates[0]
             parts = candidate.get("content", {}).get("parts", [])
-            finish_reason = None
-            
-            # Check for finish
             genai_finish = candidate.get("finishReason")
-            if genai_finish:
-                if genai_finish == "STOP":
-                    finish_reason = "tool_calls" if tool_calls else "stop"
-                elif genai_finish == "MAX_TOKENS":
-                    finish_reason = "length"
-                elif genai_finish == "SAFETY":
-                    finish_reason = "content_filter"
+            finish_reason = None
             
             for part in parts:
                 if "text" in part:
@@ -320,6 +311,15 @@ async def _stream_openai_response(
                 total_input_tokens = usage.get("promptTokenCount", total_input_tokens)
                 total_output_tokens = usage.get("candidatesTokenCount", total_output_tokens)
                 cached_tokens = usage.get("cacheReadInputTokens", cached_tokens)
+            
+            # Determine finish_reason AFTER processing parts so tool_calls state is up-to-date
+            if genai_finish:
+                if genai_finish == "STOP":
+                    finish_reason = "tool_calls" if tool_calls else "stop"
+                elif genai_finish == "MAX_TOKENS":
+                    finish_reason = "length"
+                elif genai_finish == "SAFETY":
+                    finish_reason = "content_filter"
             
             # Send finish chunk if we have finish_reason
             if finish_reason and not finish_reason_sent:
