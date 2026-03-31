@@ -1020,13 +1020,15 @@ class FormatConverter:
                     item_role = item.get("role", "user")
                     if item_role == "system":
                         # Treat as system instruction supplement
-                        for content_item in item.get("content", []):
-                            ct = content_item.get("type", "")
-                            text = ""
-                            if ct in ("input_text", "text") or (not ct and isinstance(content_item.get("text"), str)):
-                                text = content_item.get("text", "")
-                            elif isinstance(content_item, str):
+                        raw_content = item.get("content", [])
+                        if isinstance(raw_content, str):
+                            raw_content = [raw_content]
+                        for content_item in raw_content:
+                            if isinstance(content_item, str):
                                 text = content_item
+                            else:
+                                ct = content_item.get("type", "")
+                                text = content_item.get("text", "") if ct in ("input_text", "text", "") else ""
                             if text:
                                 if system_instruction:
                                     system_instruction += "\n" + text
@@ -1036,7 +1038,14 @@ class FormatConverter:
                     role = "model" if item_role == "assistant" else "user"
                     parts = []
                     
-                    for content_item in item.get("content", []):
+                    raw_content = item.get("content", [])
+                    if isinstance(raw_content, str):
+                        raw_content = [raw_content]
+                    for content_item in raw_content:
+                        if isinstance(content_item, str):
+                            if content_item.strip():
+                                parts.append({"text": content_item})
+                            continue
                         ct = content_item.get("type", "")
                         if ct in ("input_text", "output_text", "text"):
                             text = content_item.get("text", "")
