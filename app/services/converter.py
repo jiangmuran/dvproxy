@@ -565,6 +565,17 @@ class FormatConverter:
         # Sanitize: drop orphaned tool_calls with no matching tool response
         messages = FormatConverter._sanitize_openai_messages(request.get("messages", []))
 
+        # Build a lookup: tool_call_id -> function_name from all assistant messages
+        # This is needed because tool role messages only carry tool_call_id, not the name.
+        tool_id_to_name: Dict[str, str] = {}
+        for msg in messages:
+            if msg.get("role") == "assistant":
+                for tc in msg.get("tool_calls") or []:
+                    tc_id = tc.get("id", "")
+                    tc_name = tc.get("function", {}).get("name", "")
+                    if tc_id and tc_name:
+                        tool_id_to_name[tc_id] = tc_name
+
         for msg in messages:
             role = msg.get("role", "user")
             content = msg.get("content")
@@ -594,12 +605,15 @@ class FormatConverter:
             # Handle tool/function response
             if role == "tool":
                 tool_call_id = msg.get("tool_call_id", "")
+                # Use the actual function name if known; fall back to tool_call_id so
+                # the upstream can still correlate the result with the function call.
+                func_name = tool_id_to_name.get(tool_call_id, tool_call_id)
                 tool_content = content if isinstance(content, str) else json.dumps(content) if content else ""
                 if not tool_content.strip():
                     tool_content = "(empty)"
                 parts = [{
                     "functionResponse": {
-                        "name": tool_call_id,
+                        "name": func_name,
                         "response": {"output": tool_content},
                         "id": tool_call_id
                     }
@@ -666,9 +680,10 @@ class FormatConverter:
                                     ]
                                     tool_content = "\n".join(text_parts) if text_parts else json.dumps(tool_content)
                                 tool_use_id = part.get("tool_use_id", "")
+                                result_func_name = tool_id_to_name.get(tool_use_id, tool_use_id)
                                 parts.append({
                                     "functionResponse": {
-                                        "name": tool_use_id,
+                                        "name": result_func_name,
                                         "response": {"output": tool_content},
                                         "id": tool_use_id
                                     }

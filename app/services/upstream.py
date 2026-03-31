@@ -178,13 +178,17 @@ class UpstreamClient:
                                 if candidates:
                                     c = candidates[0]
                                     fr = c.get("finishReason")
+                                    parts_data = c.get("content", {}).get("parts", [])
+                                    part_types = [list(p.keys()) for p in parts_data]
                                     if fr:
-                                        parts = c.get("content", {}).get("parts", [])
-                                        part_types = [list(p.keys()) for p in parts]
                                         logger.info(f"Stream chunk #{chunk_count}: finishReason={fr!r} parts={part_types}")
-                                    elif logger.isEnabledFor(logging.DEBUG):
-                                        parts = c.get("content", {}).get("parts", [])
-                                        part_types = [list(p.keys()) for p in parts]
+                                    else:
+                                        # Log function calls to trace tool call IDs
+                                        for p in parts_data:
+                                            if "functionCall" in p:
+                                                fc = p["functionCall"]
+                                                logger.info(f"Stream chunk #{chunk_count}: functionCall name={fc.get('name')!r} id={fc.get('id')!r}")
+                                    if logger.isEnabledFor(logging.DEBUG):
                                         logger.debug(f"chunk #{chunk_count}: finishReason={fr!r} parts={part_types}")
                                 yield parsed
                             except json.JSONDecodeError as e:

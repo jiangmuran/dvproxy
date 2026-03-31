@@ -340,6 +340,11 @@ async def _stream_openai_response(
                 }
                 yield f"data: {json.dumps(finish_chunk)}\n\n"
                 finish_reason_sent = True
+                if tool_calls:
+                    import logging as _tc_log
+                    _tc_log.getLogger("dvproxy.openai").info(
+                        f"Emitting finish_reason={finish_reason!r} tool_calls={[(v['id'],v['name']) for v in tool_calls.values()]}"
+                    )
         
         # If we never sent any chunks, send an empty one with role
         if not first_chunk_sent:
@@ -470,8 +475,17 @@ async def create_response(
     This is the newer API for agentic workflows with richer
     event types and structured outputs.
     """
+    import logging as _logging
+    _resp_logger = _logging.getLogger("dvproxy.responses")
+
     start_time = time.time()
     body = await request.json()
+    
+    # Log input structure for diagnostics
+    _input = body.get("input", "")
+    if isinstance(_input, list):
+        _item_types = [(item.get("type"), item.get("call_id") or item.get("id")) for item in _input if isinstance(item, dict)]
+        _resp_logger.info(f"Responses input items: {_item_types}")
     
     stream = body.get("stream", False)
     model = body.get("model", "auto")
