@@ -1102,6 +1102,8 @@ class FormatConverter:
                     output = item.get("output", "")
                     if not isinstance(output, str):
                         output = json.dumps(output)
+                    if not output.strip():
+                        output = "(no output)"
                     call_id = item.get("call_id", "")
                     func_name = fc_id_to_name.get(call_id, call_id)
                     fr_part = {
@@ -1135,20 +1137,26 @@ class FormatConverter:
         
         import logging as _rl
         _rlog = _rl.getLogger("dvproxy.converter")
-        _tail = contents[-8:] if len(contents) > 8 else contents
-        for _i, _c in enumerate(_tail):
-            _role = _c.get("role")
-            _ps = []
-            for _p in _c.get("parts", []):
+        # Log first 6 and last 6 contents for diagnostics
+        def _fmt_parts(c):
+            ps = []
+            for _p in c.get("parts", []):
                 if "functionCall" in _p:
-                    _ps.append(f"FC(name={_p['functionCall'].get('name')!r},id={_p['functionCall'].get('id')!r})")
+                    ps.append(f"FC(name={_p['functionCall'].get('name')!r},id={_p['functionCall'].get('id')!r})")
                 elif "functionResponse" in _p:
-                    _ps.append(f"FR(name={_p['functionResponse'].get('name')!r},id={_p['functionResponse'].get('id')!r})")
+                    _out = str(_p['functionResponse'].get('response', {}).get('output', ''))[:80]
+                    ps.append(f"FR(name={_p['functionResponse'].get('name')!r},out={_out!r})")
                 elif "text" in _p:
-                    _ps.append(f"text({_p['text'][:20]!r})")
+                    ps.append(f"text({_p['text'][:20]!r})")
                 else:
-                    _ps.append(str(list(_p.keys())))
-            _rlog.info(f"responses_contents[tail{_i}] role={_role!r}: {_ps}")
+                    ps.append(str(list(_p.keys())))
+            return ps
+        for _i, _c in enumerate(contents[:6]):
+            _rlog.info(f"responses_contents[{_i}] role={_c.get('role')!r}: {_fmt_parts(_c)}")
+        if len(contents) > 6:
+            _rlog.info(f"  ... ({len(contents)} total) ...")
+            for _i, _c in enumerate(contents[-4:]):
+                _rlog.info(f"responses_contents[tail{_i}] role={_c.get('role')!r}: {_fmt_parts(_c)}")
         
         # Add system instruction
         if system_instruction:
