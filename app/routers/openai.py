@@ -314,12 +314,15 @@ async def _stream_openai_response(
             
             # Determine finish_reason AFTER processing parts so tool_calls state is up-to-date
             if genai_finish:
-                if genai_finish == "STOP":
+                if genai_finish in ("STOP", "FUNCTION_CALL"):
                     finish_reason = "tool_calls" if tool_calls else "stop"
                 elif genai_finish == "MAX_TOKENS":
                     finish_reason = "length"
                 elif genai_finish == "SAFETY":
                     finish_reason = "content_filter"
+                else:
+                    # Unknown finishReason — treat as stop so client gets a proper finish chunk
+                    finish_reason = "tool_calls" if tool_calls else "stop"
             
             # Send finish chunk if we have finish_reason
             if finish_reason and not finish_reason_sent:

@@ -218,6 +218,35 @@ class FormatConverter:
 
         return result
 
+    @staticmethod
+    def _sanitize_responses_input(items: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+        """Remove function_call items that have no matching function_call_output.
+
+        Bedrock raises ValidationException if a tool_use has no immediately
+        following tool_result.  Walk the input list and drop any function_call
+        whose call_id is never answered by a function_call_output further along.
+        """
+        # Collect all answered call_ids
+        answered: set = set()
+        for item in items:
+            if isinstance(item, dict) and item.get("type") == "function_call_output":
+                cid = item.get("call_id", "")
+                if cid:
+                    answered.add(cid)
+
+        result = []
+        for item in items:
+            if isinstance(item, dict) and item.get("type") == "function_call":
+                cid = item.get("call_id", item.get("id", ""))
+                if cid and cid not in answered:
+                    import logging
+                    logging.getLogger("dvproxy.converter").warning(
+                        f"Dropping unanswered function_call id={cid!r} from Responses API input"
+                    )
+                    continue
+            result.append(item)
+        return result
+
     # ==================== Anthropic -> GenAI ====================
 
     @staticmethod
@@ -921,8 +950,11 @@ class FormatConverter:
         if instructions:
             system_instruction = instructions
         
-        # Handle input
+        # Sanitize input: remove function_call items that have no matching
+        # function_call_output, which would cause Bedrock ValidationException.
         input_data = request.get("input", "")
+        if isinstance(input_data, list):
+            input_data = FormatConverter._sanitize_responses_input(input_data)
         
         if isinstance(input_data, str):
             # Simple string input
