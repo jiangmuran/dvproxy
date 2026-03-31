@@ -13,6 +13,21 @@ from app.config import settings
 logger = logging.getLogger("dvproxy.upstream")
 
 
+class UpstreamError(Exception):
+    """Raised when the upstream returns a non-2xx response.
+
+    Carries the parsed error payload so routers can pass it through to clients
+    without losing the original error type / message.
+    """
+
+    def __init__(self, status_code: int, error: Dict[str, Any], raw: bytes = b""):
+        self.status_code = status_code
+        self.error = error          # parsed JSON error dict (may be empty)
+        self.raw = raw              # raw response bytes for fallback
+        message = error.get("message") or error.get("error") or raw.decode(errors="replace")[:200]
+        super().__init__(message)
+
+
 class UpstreamClient:
     """Client for communicating with DeepVLab upstream API
     
@@ -87,11 +102,16 @@ class UpstreamClient:
                 json=request,
                 headers=self._get_headers()
             )
-            
+
             if response.status_code != 200:
-                logger.error(f"Upstream error: {response.status_code} - {response.text[:500]}")
-            
-            response.raise_for_status()
+                raw = response.content
+                logger.error(f"Upstream error: {response.status_code} - {raw[:500]}")
+                try:
+                    error_body = json.loads(raw)
+                except Exception:
+                    error_body = {}
+                raise UpstreamError(response.status_code, error_body, raw)
+
             return response.json()
     
     async def chat_stream(self, request: Dict[str, Any]) -> AsyncGenerator[Dict[str, Any], None]:
@@ -124,7 +144,11 @@ class UpstreamClient:
                 if response.status_code != 200:
                     error_body = await response.aread()
                     logger.error(f"Upstream stream error: {response.status_code} - {error_body[:500]}")
-                    response.raise_for_status()
+                    try:
+                        parsed_error = json.loads(error_body)
+                    except Exception:
+                        parsed_error = {}
+                    raise UpstreamError(response.status_code, parsed_error, error_body)
                 
                 buffer = ""
                 chunk_count = 0

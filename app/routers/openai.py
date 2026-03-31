@@ -24,7 +24,7 @@ from app.models.database import APIKey
 from app.models.db import get_db
 from app.services.auth import get_api_key
 from app.services.converter import FormatConverter
-from app.services.upstream import UpstreamClient
+from app.services.upstream import UpstreamClient, UpstreamError
 from app.services.usage import UsageService
 
 router = APIRouter(prefix="/v1", tags=["OpenAI"])
@@ -106,6 +106,22 @@ async def create_chat_completion(
             
             return openai_response
             
+        except UpstreamError as e:
+            latency_ms = int((time.time() - start_time) * 1000)
+            await UsageService.log_usage(
+                db=db,
+                api_key_id=api_key.id,
+                endpoint="openai",
+                model=model,
+                input_tokens=0,
+                output_tokens=0,
+                ip_address=ip_address,
+                user_agent=user_agent,
+                latency_ms=latency_ms,
+                success=False,
+                error_message=str(e)
+            )
+            raise HTTPException(status_code=e.status_code, detail=e.error or str(e))
         except Exception as e:
             latency_ms = int((time.time() - start_time) * 1000)
             await UsageService.log_usage(
@@ -392,6 +408,28 @@ async def _stream_openai_response(
             success=True
         )
         
+    except UpstreamError as e:
+        # Pass through the upstream error structure directly
+        error_chunk = {"error": e.error} if e.error else {
+            "error": {"message": str(e), "type": "upstream_error", "code": str(e.status_code)}
+        }
+        yield f"data: {json.dumps(error_chunk)}\n\n"
+
+        latency_ms = int((time.time() - start_time) * 1000)
+        await UsageService.log_usage(
+            db=db,
+            api_key_id=api_key_id,
+            endpoint="openai",
+            model=model,
+            input_tokens=0,
+            output_tokens=0,
+            ip_address=ip_address,
+            user_agent=user_agent,
+            latency_ms=latency_ms,
+            success=False,
+            error_message=str(e)
+        )
+
     except Exception as e:
         error_chunk = {
             "error": {
@@ -401,7 +439,7 @@ async def _stream_openai_response(
             }
         }
         yield f"data: {json.dumps(error_chunk)}\n\n"
-        
+
         latency_ms = int((time.time() - start_time) * 1000)
         await UsageService.log_usage(
             db=db,

@@ -20,7 +20,7 @@ from app.models.database import APIKey
 from app.models.db import get_db
 from app.services.auth import get_api_key
 from app.services.converter import FormatConverter
-from app.services.upstream import UpstreamClient
+from app.services.upstream import UpstreamClient, UpstreamError
 from app.services.usage import UsageService
 
 router = APIRouter(prefix="/v1", tags=["Anthropic"])
@@ -109,6 +109,22 @@ async def create_message(
             
             return anthropic_response
             
+        except UpstreamError as e:
+            latency_ms = int((time.time() - start_time) * 1000)
+            await UsageService.log_usage(
+                db=db,
+                api_key_id=api_key.id,
+                endpoint="anthropic",
+                model=model,
+                input_tokens=0,
+                output_tokens=0,
+                ip_address=ip_address,
+                user_agent=user_agent,
+                latency_ms=latency_ms,
+                success=False,
+                error_message=str(e)
+            )
+            raise HTTPException(status_code=e.status_code, detail=e.error or str(e))
         except Exception as e:
             latency_ms = int((time.time() - start_time) * 1000)
             await UsageService.log_usage(
@@ -387,6 +403,29 @@ async def _stream_anthropic_response(
             success=True
         )
         
+    except UpstreamError as e:
+        # Pass through the upstream error structure directly
+        if e.error:
+            error_event = {"type": "error", "error": e.error}
+        else:
+            error_event = {"type": "error", "error": {"type": "upstream_error", "message": str(e)}}
+        yield f"event: error\ndata: {json.dumps(error_event)}\n\n"
+
+        latency_ms = int((time.time() - start_time) * 1000)
+        await UsageService.log_usage(
+            db=db,
+            api_key_id=api_key_id,
+            endpoint="anthropic",
+            model=model,
+            input_tokens=0,
+            output_tokens=0,
+            ip_address=ip_address,
+            user_agent=user_agent,
+            latency_ms=latency_ms,
+            success=False,
+            error_message=str(e)
+        )
+
     except Exception as e:
         # Send error event
         error_event = {
@@ -397,7 +436,7 @@ async def _stream_anthropic_response(
             }
         }
         yield f"event: error\ndata: {json.dumps(error_event)}\n\n"
-        
+
         latency_ms = int((time.time() - start_time) * 1000)
         await UsageService.log_usage(
             db=db,
