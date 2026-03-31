@@ -766,6 +766,24 @@ class FormatConverter:
             "config": {}
         }
         
+        import logging as _cl
+        _conv_log = _cl.getLogger("dvproxy.converter")
+        # Log the last few contents for tool-call diagnostics
+        _tail = contents[-6:] if len(contents) > 6 else contents
+        for _i, _c in enumerate(_tail):
+            _role = _c.get("role")
+            _parts_summary = []
+            for _p in _c.get("parts", []):
+                if "functionCall" in _p:
+                    _parts_summary.append(f"functionCall(name={_p['functionCall'].get('name')!r},id={_p['functionCall'].get('id')!r})")
+                elif "functionResponse" in _p:
+                    _parts_summary.append(f"functionResponse(name={_p['functionResponse'].get('name')!r},id={_p['functionResponse'].get('id')!r})")
+                elif "text" in _p:
+                    _parts_summary.append(f"text({_p['text'][:30]!r})")
+                else:
+                    _parts_summary.append(str(list(_p.keys())))
+            _conv_log.info(f"contents[tail{_i}] role={_role!r}: {_parts_summary}")
+        
         # Add system instruction
         if system_instruction:
             genai_request["config"]["systemInstruction"] = {
@@ -971,6 +989,16 @@ class FormatConverter:
         if isinstance(input_data, list):
             input_data = FormatConverter._sanitize_responses_input(input_data)
         
+        # Build lookup: call_id -> function_name from function_call items
+        fc_id_to_name: Dict[str, str] = {}
+        if isinstance(input_data, list):
+            for item in input_data:
+                if isinstance(item, dict) and item.get("type") == "function_call":
+                    cid = item.get("call_id", item.get("id", ""))
+                    name = item.get("name", "")
+                    if cid and name:
+                        fc_id_to_name[cid] = name
+        
         if isinstance(input_data, str):
             # Simple string input
             contents.append({"role": "user", "parts": [{"text": input_data}]})
@@ -983,8 +1011,29 @@ class FormatConverter:
                 
                 item_type = item.get("type", "")
                 
+                # Items with no "type" but with "role"+"content" are plain messages
+                # (OpenAI Responses API sends them as {"role":..., "content":[...]} without type)
+                if not item_type and item.get("role") and "content" in item:
+                    item_type = "message"
+                
                 if item_type == "message":
-                    role = "model" if item.get("role") == "assistant" else "user"
+                    item_role = item.get("role", "user")
+                    if item_role == "system":
+                        # Treat as system instruction supplement
+                        for content_item in item.get("content", []):
+                            ct = content_item.get("type", "")
+                            text = ""
+                            if ct in ("input_text", "text") or (not ct and isinstance(content_item.get("text"), str)):
+                                text = content_item.get("text", "")
+                            elif isinstance(content_item, str):
+                                text = content_item
+                            if text:
+                                if system_instruction:
+                                    system_instruction += "\n" + text
+                                else:
+                                    system_instruction = text
+                        continue
+                    role = "model" if item_role == "assistant" else "user"
                     parts = []
                     
                     for content_item in item.get("content", []):
@@ -1041,11 +1090,12 @@ class FormatConverter:
                     if not isinstance(output, str):
                         output = json.dumps(output)
                     call_id = item.get("call_id", "")
+                    func_name = fc_id_to_name.get(call_id, call_id)
                     contents.append({
                         "role": "user",
                         "parts": [{
                             "functionResponse": {
-                                "name": call_id,
+                                "name": func_name,
                                 "response": {"output": output},
                                 "id": call_id
                             }
@@ -1068,6 +1118,23 @@ class FormatConverter:
             "contents": contents,
             "config": {}
         }
+        
+        import logging as _rl
+        _rlog = _rl.getLogger("dvproxy.converter")
+        _tail = contents[-8:] if len(contents) > 8 else contents
+        for _i, _c in enumerate(_tail):
+            _role = _c.get("role")
+            _ps = []
+            for _p in _c.get("parts", []):
+                if "functionCall" in _p:
+                    _ps.append(f"FC(name={_p['functionCall'].get('name')!r},id={_p['functionCall'].get('id')!r})")
+                elif "functionResponse" in _p:
+                    _ps.append(f"FR(name={_p['functionResponse'].get('name')!r},id={_p['functionResponse'].get('id')!r})")
+                elif "text" in _p:
+                    _ps.append(f"text({_p['text'][:20]!r})")
+                else:
+                    _ps.append(str(list(_p.keys())))
+            _rlog.info(f"responses_contents[tail{_i}] role={_role!r}: {_ps}")
         
         # Add system instruction
         if system_instruction:

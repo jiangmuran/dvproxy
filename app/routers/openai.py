@@ -486,6 +486,10 @@ async def create_response(
     if isinstance(_input, list):
         _item_types = [(item.get("type"), item.get("call_id") or item.get("id")) for item in _input if isinstance(item, dict)]
         _resp_logger.info(f"Responses input items: {_item_types}")
+        # Log items with type=None to understand their structure
+        for _idx, _item in enumerate(_input):
+            if isinstance(_item, dict) and _item.get("type") is None:
+                _resp_logger.info(f"  input[{_idx}] has no type, keys={list(_item.keys())}, role={_item.get('role')}, content_types={[c.get('type') for c in _item.get('content',[]) if isinstance(c,dict)]}")
     
     stream = body.get("stream", False)
     model = body.get("model", "auto")
