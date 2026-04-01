@@ -1,0 +1,281 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>DVProxy Logs</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: 'Monaco', 'Courier New', monospace;
+            background: #1e1e1e;
+            color: #d4d4d4;
+            height: 100vh;
+            overflow: hidden;
+        }
+        
+        .container {
+            display: flex;
+            flex-direction: column;
+            height: 100vh;
+        }
+        
+        .header {
+            background: #252526;
+            border-bottom: 1px solid #3e3e42;
+            padding: 12px 16px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        
+        .header h1 {
+            font-size: 14px;
+            color: #fff;
+        }
+        
+        .header-right {
+            display: flex;
+            gap: 12px;
+            align-items: center;
+        }
+        
+        .status {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            font-size: 12px;
+        }
+        
+        .status-dot {
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            background: #4ec9b0;
+        }
+        
+        .status-dot.stopped {
+            background: #ce9178;
+        }
+        
+        .btn {
+            background: #007acc;
+            color: white;
+            border: none;
+            padding: 6px 12px;
+            border-radius: 3px;
+            cursor: pointer;
+            font-size: 12px;
+            font-family: inherit;
+        }
+        
+        .btn:hover {
+            background: #005a9e;
+        }
+        
+        .btn.stop {
+            background: #ce9178;
+        }
+        
+        .btn.stop:hover {
+            background: #b87d5b;
+        }
+        
+        .logs-container {
+            flex: 1;
+            overflow-y: auto;
+            background: #1e1e1e;
+            padding: 0;
+        }
+        
+        .log-line {
+            padding: 2px 16px;
+            border-bottom: 1px solid #2d2d30;
+            font-size: 12px;
+            line-height: 1.5;
+            word-break: break-all;
+            display: grid;
+            grid-template-columns: 180px 80px 200px 1fr;
+            gap: 12px;
+        }
+        
+        .log-timestamp {
+            color: #858585;
+            flex-shrink: 0;
+        }
+        
+        .log-level {
+            flex-shrink: 0;
+            font-weight: bold;
+        }
+        
+        .log-level.DEBUG {
+            color: #858585;
+        }
+        
+        .log-level.INFO {
+            color: #4ec9b0;
+        }
+        
+        .log-level.WARNING {
+            color: #dcdcaa;
+        }
+        
+        .log-level.ERROR {
+            color: #f48771;
+        }
+        
+        .log-level.CRITICAL {
+            color: #ce9178;
+        }
+        
+        .log-logger {
+            color: #9cdcfe;
+            flex-shrink: 0;
+        }
+        
+        .log-message {
+            color: #d4d4d4;
+            white-space: pre-wrap;
+        }
+        
+        .loading {
+            text-align: center;
+            padding: 20px;
+            color: #858585;
+        }
+        
+        .footer {
+            background: #252526;
+            border-top: 1px solid #3e3e42;
+            padding: 8px 16px;
+            font-size: 11px;
+            color: #858585;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>DVProxy Logs</h1>
+            <div class="header-right">
+                <div class="status">
+                    <div class="status-dot" id="statusDot"></div>
+                    <span id="statusText">Live</span>
+                </div>
+                <button class="btn" id="clearBtn">Clear</button>
+                <button class="btn" id="pauseBtn">Pause</button>
+            </div>
+        </div>
+        
+        <div class="logs-container" id="logsContainer">
+            <div class="loading">Loading logs...</div>
+        </div>
+        
+        <div class="footer">
+            <span id="logCount">0 logs</span> | <span id="updateTime">-</span>
+        </div>
+    </div>
+    
+    <script>
+        const logsContainer = document.getElementById('logsContainer');
+        const clearBtn = document.getElementById('clearBtn');
+        const pauseBtn = document.getElementById('pauseBtn');
+        const statusDot = document.getElementById('statusDot');
+        const statusText = document.getElementById('statusText');
+        const logCount = document.getElementById('logCount');
+        const updateTime = document.getElementById('updateTime');
+        
+        let sinceIndex = 0;
+        let isPaused = false;
+        let token = localStorage.getItem('jwt_token');
+        
+        if (!token) {
+            logsContainer.innerHTML = '<div class="loading">Not authenticated. Please login first.</div>';
+        }
+        
+        async function fetchLogs() {
+            try {
+                const response = await fetch(`/v1/admin/logs?since=${sinceIndex}&limit=100`, {
+                    headers: {
+                        'Authorization': `Bearer ${token}`
+                    }
+                });
+                
+                if (response.status === 401) {
+                    logsContainer.innerHTML = '<div class="loading">Unauthorized. Session expired.</div>';
+                    statusDot.classList.add('stopped');
+                    statusText.textContent = 'Error';
+                    return;
+                }
+                
+                if (!response.ok) throw new Error(`HTTP ${response.status}`);
+                
+                const data = await response.json();
+                const newLogs = data.logs || [];
+                
+                if (newLogs.length > 0 && !isPaused) {
+                    if (sinceIndex === 0) {
+                        logsContainer.innerHTML = '';
+                    }
+                    
+                    newLogs.forEach(log => {
+                        const line = document.createElement('div');
+                        line.className = 'log-line';
+                        
+                        const timestamp = new Date(log.timestamp).toLocaleTimeString();
+                        line.innerHTML = `
+                            <div class="log-timestamp">${timestamp}</div>
+                            <div class="log-level ${log.level}">${log.level}</div>
+                            <div class="log-logger">${log.logger}</div>
+                            <div class="log-message">${escapeHtml(log.message)}</div>
+                        `;
+                        logsContainer.appendChild(line);
+                    });
+                    
+                    sinceIndex = data.next_index;
+                    logsContainer.scrollTop = logsContainer.scrollHeight;
+                }
+                
+                logCount.textContent = `${data.total} logs`;
+                updateTime.textContent = new Date().toLocaleTimeString();
+                
+                statusDot.classList.remove('stopped');
+                statusText.textContent = 'Live';
+                
+            } catch (error) {
+                console.error('Error fetching logs:', error);
+                statusDot.classList.add('stopped');
+                statusText.textContent = 'Error';
+                updateTime.textContent = error.message;
+            }
+        }
+        
+        function escapeHtml(text) {
+            const div = document.createElement('div');
+            div.textContent = text;
+            return div.innerHTML;
+        }
+        
+        clearBtn.addEventListener('click', () => {
+            logsContainer.innerHTML = '';
+            sinceIndex = 0;
+        });
+        
+        pauseBtn.addEventListener('click', () => {
+            isPaused = !isPaused;
+            pauseBtn.textContent = isPaused ? 'Resume' : 'Pause';
+            pauseBtn.style.opacity = isPaused ? '0.5' : '1';
+        });
+        
+        // Initial load and then poll every 500ms
+        fetchLogs();
+        setInterval(fetchLogs, 500);
+    </script>
+</body>
+</html>

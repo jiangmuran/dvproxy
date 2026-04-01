@@ -1129,3 +1129,15 @@ async def get_login_methods(admin: str = Depends(get_current_admin)):
     }
     
     return {"methods": methods}
+
+
+# ==================== Logs Page ====================
+
+from fastapi.responses import FileResponse
+from pathlib import Path
+
+@router.get("/logs")
+async def logs_page(admin: dict = Depends(verify_jwt_token)):
+    """Serve logs viewer HTML page"""
+    template_path = Path(__file__).parent.parent / "templates" / "logs.html"
+    return FileResponse(template_path, media_type="text/html")

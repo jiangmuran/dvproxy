@@ -15,6 +15,8 @@ import jinja2
 from app.config import settings
 from app.models.db import init_db, get_db
 from app.routers import anthropic, openai, admin
+from app.services.logs import setup_log_streaming
+from app.routers import accounts
 
 
 # Configure logging
@@ -23,6 +25,9 @@ logging.basicConfig(
     format="%(asctime)s - %(name)s - %(levelname)s - %(message)s"
 )
 logger = logging.getLogger("dvproxy")
+
+# Setup log streaming to buffer for web viewer
+setup_log_streaming()
 
 
 @asynccontextmanager
@@ -60,6 +65,7 @@ app.add_middleware(
 app.include_router(anthropic.router)
 app.include_router(openai.router)
 app.include_router(admin.router)
+app.include_router(accounts.router)
 
 
 # Mount static files if directory exists

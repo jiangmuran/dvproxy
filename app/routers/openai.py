@@ -121,7 +121,9 @@ async def create_chat_completion(
                 success=False,
                 error_message=str(e)
             )
-            raise HTTPException(status_code=e.status_code, detail=e.error or str(e))
+            # Pass through the upstream error with full details so client can see what went wrong
+            logger.info(f"Upstream error {e.status_code}: {e.error}")
+            raise HTTPException(status_code=e.status_code, detail=e.error if e.error else {"error": "Upstream API error", "message": str(e)})
         except Exception as e:
             latency_ms = int((time.time() - start_time) * 1000)
             await UsageService.log_usage(
@@ -544,6 +546,25 @@ async def create_response(
             
             return responses_response
             
+        except UpstreamError as e:
+            latency_ms = int((time.time() - start_time) * 1000)
+            await UsageService.log_usage(
+                db=db,
+                api_key_id=api_key.id,
+                endpoint="responses",
+                model=model,
+                input_tokens=0,
+                output_tokens=0,
+                ip_address=ip_address,
+                user_agent=user_agent,
+                latency_ms=latency_ms,
+                success=False,
+                error_message=str(e)
+            )
+            # Pass through the upstream error with full details
+            logger.info(f"Upstream error {e.status_code}: {e.error}")
+            raise HTTPException(status_code=e.status_code, detail=e.error if e.error else {"error": "Upstream API error", "message": str(e)})
+        
         except Exception as e:
             latency_ms = int((time.time() - start_time) * 1000)
             await UsageService.log_usage(

@@ -48,11 +48,22 @@ class UpstreamClient:
         
         Priority:
         1. Instance token (passed during init)
-        2. DeepVLab JWT token (from credential store)
-        3. Static upstream token from settings
+        2. Current account token (from AccountManager)
+        3. DeepVLab JWT token (from credential store)
+        4. Static upstream token from settings
         """
         if self.token:
             return self.token
+        
+        # Try to get current account token
+        try:
+            from app.services.accounts import get_account_manager
+            mgr = get_account_manager()
+            account_token = mgr.get_current_token()
+            if account_token:
+                return account_token
+        except Exception:
+            pass
         
         # Try to get DeepVLab token (sync version for headers)
         try:
