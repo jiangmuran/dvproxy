@@ -1,0 +1,595 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>DVProxy Admin</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+            background: #f5f5f5;
+            color: #333;
+        }
+        
+        .sidebar {
+            position: fixed;
+            left: 0;
+            top: 0;
+            width: 200px;
+            height: 100vh;
+            background: #2c3e50;
+            color: white;
+            padding: 20px 0;
+            overflow-y: auto;
+            z-index: 100;
+        }
+        
+        .sidebar-title {
+            padding: 0 20px 20px;
+            font-size: 16px;
+            font-weight: bold;
+            border-bottom: 1px solid rgba(255,255,255,0.1);
+            margin-bottom: 20px;
+        }
+        
+        .sidebar-nav {
+            list-style: none;
+        }
+        
+        .sidebar-nav li {
+            margin: 0;
+        }
+        
+        .sidebar-nav a {
+            display: block;
+            padding: 12px 20px;
+            color: rgba(255,255,255,0.8);
+            text-decoration: none;
+            transition: all 0.3s;
+            border-left: 3px solid transparent;
+        }
+        
+        .sidebar-nav a:hover {
+            background: rgba(255,255,255,0.1);
+            color: white;
+        }
+        
+        .sidebar-nav a.active {
+            background: #3498db;
+            color: white;
+            border-left-color: #fff;
+        }
+        
+        .main {
+            margin-left: 200px;
+            padding: 20px;
+            min-height: 100vh;
+        }
+        
+        .header {
+            background: white;
+            padding: 20px;
+            border-radius: 8px;
+            margin-bottom: 20px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+        }
+        
+        .header h1 {
+            font-size: 24px;
+            margin: 0;
+        }
+        
+        .logout-btn {
+            background: #e74c3c;
+            color: white;
+            border: none;
+            padding: 8px 16px;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 14px;
+        }
+        
+        .logout-btn:hover {
+            background: #c0392b;
+        }
+        
+        .panel {
+            background: white;
+            border-radius: 8px;
+            padding: 20px;
+            margin-bottom: 20px;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+            display: none;
+        }
+        
+        .panel.active {
+            display: block;
+        }
+        
+        .section-title {
+            font-size: 18px;
+            font-weight: bold;
+            margin-bottom: 20px;
+            padding-bottom: 10px;
+            border-bottom: 2px solid #3498db;
+        }
+        
+        .form-group {
+            margin-bottom: 15px;
+        }
+        
+        .form-group label {
+            display: block;
+            margin-bottom: 5px;
+            font-weight: 500;
+            font-size: 14px;
+        }
+        
+        .form-group input,
+        .form-group textarea {
+            width: 100%;
+            padding: 10px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            font-family: inherit;
+            font-size: 14px;
+        }
+        
+        .form-group input:focus,
+        .form-group textarea:focus {
+            outline: none;
+            border-color: #3498db;
+            box-shadow: 0 0 0 2px rgba(52, 152, 219, 0.1);
+        }
+        
+        .btn {
+            background: #3498db;
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 14px;
+            transition: all 0.3s;
+        }
+        
+        .btn:hover {
+            background: #2980b9;
+        }
+        
+        .btn.danger {
+            background: #e74c3c;
+        }
+        
+        .btn.danger:hover {
+            background: #c0392b;
+        }
+        
+        .btn.small {
+            padding: 6px 12px;
+            font-size: 12px;
+        }
+        
+        .message {
+            padding: 15px;
+            border-radius: 4px;
+            margin-bottom: 15px;
+            display: none;
+        }
+        
+        .message.show {
+            display: block;
+        }
+        
+        .message.success {
+            background: #d4edda;
+            color: #155724;
+            border: 1px solid #c3e6cb;
+        }
+        
+        .message.error {
+            background: #f8d7da;
+            color: #721c24;
+            border: 1px solid #f5c6cb;
+        }
+        
+        .table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-top: 15px;
+        }
+        
+        .table th {
+            background: #f8f9fa;
+            padding: 12px;
+            text-align: left;
+            font-weight: 600;
+            border-bottom: 2px solid #dee2e6;
+        }
+        
+        .table td {
+            padding: 12px;
+            border-bottom: 1px solid #dee2e6;
+        }
+        
+        .table tr:hover {
+            background: #f8f9fa;
+        }
+        
+        .account-badge {
+            display: inline-block;
+            background: #d4edda;
+            color: #155724;
+            padding: 4px 8px;
+            border-radius: 4px;
+            font-size: 12px;
+        }
+        
+        .account-badge.inactive {
+            background: #e2e3e5;
+            color: #383d41;
+        }
+        
+        .loading {
+            text-align: center;
+            padding: 20px;
+            color: #999;
+        }
+        
+        .spinner {
+            display: inline-block;
+            width: 20px;
+            height: 20px;
+            border: 3px solid #f3f3f3;
+            border-top: 3px solid #3498db;
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+        }
+        
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+        
+        .form-row {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 15px;
+        }
+    </style>
+</head>
+<body>
+    <div class="sidebar">
+        <div class="sidebar-title">DVProxy</div>
+        <ul class="sidebar-nav">
+            <li><a href="#" data-panel="accounts" class="nav-link active">账号管理</a></li>
+            <li><a href="#" data-panel="logs" class="nav-link">实时日志</a></li>
+        </ul>
+    </div>
+    
+    <div class="main">
+        <div class="header">
+            <h1 id="pageTitle">账号管理</h1>
+            <button class="logout-btn" onclick="logout()">退出登录</button>
+        </div>
+        
+        <!-- 账号管理面板 -->
+        <div class="panel active" id="accounts-panel">
+            <div class="section-title">添加账号</div>
+            
+            <div id="accountMessage" class="message"></div>
+            
+            <div class="form-group">
+                <label>账号名称</label>
+                <input type="text" id="accountName" placeholder="例如：account1">
+            </div>
+            
+            <div class="form-group">
+                <label>API Token</label>
+                <textarea id="accountToken" placeholder="粘贴 DeepVLab API Token" rows="4"></textarea>
+            </div>
+            
+            <button class="btn" onclick="addAccount()">添加账号</button>
+            
+            <div class="section-title" style="margin-top: 40px;">已有账号</div>
+            
+            <table class="table" id="accountsTable">
+                <thead>
+                    <tr>
+                        <th>账号名</th>
+                        <th>状态</th>
+                        <th>操作</th>
+                    </tr>
+                </thead>
+                <tbody id="accountsList">
+                    <tr><td colspan="3" class="loading"><div class="spinner"></div> 加载中...</td></tr>
+                </tbody>
+            </table>
+        </div>
+        
+        <!-- 日志面板 -->
+        <div class="panel" id="logs-panel">
+            <div class="section-title">实时日志</div>
+            
+            <div style="margin-bottom: 15px;">
+                <button class="btn small" onclick="pauseLogs()" id="pauseLogsBtn">暂停</button>
+                <button class="btn small" onclick="clearLogs()">清空</button>
+                <span id="logsStatus" style="margin-left: 15px; color: #999;">Live</span>
+            </div>
+            
+            <div id="logsContainer" style="
+                background: #1e1e1e;
+                color: #d4d4d4;
+                padding: 15px;
+                border-radius: 4px;
+                font-family: 'Monaco', 'Courier New', monospace;
+                font-size: 12px;
+                height: 500px;
+                overflow-y: auto;
+                border: 1px solid #ddd;
+            ">
+                <div class="loading"><div class="spinner"></div> 加载日志...</div>
+            </div>
+            
+            <div style="margin-top: 10px; font-size: 12px; color: #999;">
+                <span id="logCount">0 logs</span> | <span id="updateTime">-</span>
+            </div>
+        </div>
+    </div>
+    
+    <script>
+        let token = localStorage.getItem('jwt_token');
+        let currentPanel = 'accounts';
+        let logsIndex = 0;
+        let logsPaused = false;
+        
+        if (!token) {
+            window.location.href = '/admin/login';
+        }
+        
+        // 导航切换
+        document.querySelectorAll('.nav-link').forEach(link => {
+            link.addEventListener('click', (e) => {
+                e.preventDefault();
+                const panel = link.dataset.panel;
+                
+                // 更新导航
+                document.querySelectorAll('.nav-link').forEach(l => l.classList.remove('active'));
+                link.classList.add('active');
+                
+                // 更新面板
+                document.querySelectorAll('.panel').forEach(p => p.classList.remove('active'));
+                document.getElementById(panel + '-panel').classList.add('active');
+                
+                // 更新标题
+                const titles = {'accounts': '账号管理', 'logs': '实时日志'};
+                document.getElementById('pageTitle').textContent = titles[panel];
+                
+                currentPanel = panel;
+                
+                // 加载对应数据
+                if (panel === 'accounts') {
+                    loadAccounts();
+                } else if (panel === 'logs') {
+                    loadLogs();
+                }
+            });
+        });
+        
+        async function addAccount() {
+            const name = document.getElementById('accountName').value.trim();
+            const token_val = document.getElementById('accountToken').value.trim();
+            
+            if (!name || !token_val) {
+                showMessage('请填写账号名和 Token', 'error', 'accountMessage');
+                return;
+            }
+            
+            try {
+                const response = await fetch('/v1/admin/accounts/add', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Authorization': `Bearer ${token}`
+                    },
+                    body: JSON.stringify({name, token: token_val})
+                });
+                
+                if (!response.ok) throw new Error(`HTTP ${response.status}`);
+                
+                showMessage('账号添加成功', 'success', 'accountMessage');
+                document.getElementById('accountName').value = '';
+                document.getElementById('accountToken').value = '';
+                
+                setTimeout(loadAccounts, 500);
+            } catch (error) {
+                showMessage('添加失败: ' + error.message, 'error', 'accountMessage');
+            }
+        }
+        
+        async function loadAccounts() {
+            try {
+                const response = await fetch('/v1/admin/accounts/list', {
+                    headers: {'Authorization': `Bearer ${token}`}
+                });
+                
+                if (response.status === 401) {
+                    window.location.href = '/admin/login';
+                    return;
+                }
+                
+                if (!response.ok) throw new Error(`HTTP ${response.status}`);
+                
+                const accounts = await response.json();
+                const tbody = document.getElementById('accountsList');
+                
+                if (accounts.length === 0) {
+                    tbody.innerHTML = '<tr><td colspan="3" style="text-align: center; color: #999;">暂无账号</td></tr>';
+                    return;
+                }
+                
+                tbody.innerHTML = accounts.map(acc => `
+                    <tr>
+                        <td><strong>${escapeHtml(acc.name)}</strong></td>
+                        <td>
+                            <span class="account-badge ${acc.current ? '' : 'inactive'}">
+                                ${acc.current ? '当前' : '未激活'}
+                            </span>
+                        </td>
+                        <td>
+                            ${acc.current ? 
+                                '<span style="color: #999;">已激活</span>' :
+                                `<button class="btn small" onclick="switchAccount('${escapeHtml(acc.name)}')">激活</button>`
+                            }
+                            <button class="btn small danger" style="margin-left: 5px;" onclick="deleteAccount('${escapeHtml(acc.name)}')">删除</button>
+                        </td>
+                    </tr>
+                `).join('');
+            } catch (error) {
+                console.error('Error:', error);
+                document.getElementById('accountsList').innerHTML = 
+                    `<tr><td colspan="3" style="color: #e74c3c;">加载失败: ${error.message}</td></tr>`;
+            }
+        }
+        
+        async function switchAccount(name) {
+            try {
+                const response = await fetch('/v1/admin/accounts/switch', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Authorization': `Bearer ${token}`
+                    },
+                    body: JSON.stringify({name})
+                });
+                
+                if (!response.ok) throw new Error(`HTTP ${response.status}`);
+                
+                showMessage('已切换到: ' + name, 'success', 'accountMessage');
+                setTimeout(loadAccounts, 500);
+            } catch (error) {
+                showMessage('切换失败: ' + error.message, 'error', 'accountMessage');
+            }
+        }
+        
+        async function deleteAccount(name) {
+            if (!confirm(`确定要删除账号 "${name}" 吗?`)) return;
+            
+            try {
+                const response = await fetch(`/v1/admin/accounts/${encodeURIComponent(name)}`, {
+                    method: 'DELETE',
+                    headers: {'Authorization': `Bearer ${token}`}
+                });
+                
+                if (!response.ok) throw new Error(`HTTP ${response.status}`);
+                
+                showMessage('账号已删除', 'success', 'accountMessage');
+                setTimeout(loadAccounts, 500);
+            } catch (error) {
+                showMessage('删除失败: ' + error.message, 'error', 'accountMessage');
+            }
+        }
+        
+        let logsSinceIndex = 0;
+        
+        async function loadLogs() {
+            if (logsPaused) return;
+            
+            try {
+                const response = await fetch(`/v1/admin/logs?since=${logsSinceIndex}&limit=100`, {
+                    headers: {'Authorization': `Bearer ${token}`}
+                });
+                
+                if (response.status === 401) {
+                    window.location.href = '/admin/login';
+                    return;
+                }
+                
+                if (!response.ok) throw new Error(`HTTP ${response.status}`);
+                
+                const data = await response.json();
+                const container = document.getElementById('logsContainer');
+                
+                if (logsSinceIndex === 0) {
+                    container.innerHTML = '';
+                }
+                
+                data.logs.forEach(log => {
+                    const line = document.createElement('div');
+                    const time = new Date(log.timestamp).toLocaleTimeString();
+                    const levelColor = {
+                        'DEBUG': '#858585',
+                        'INFO': '#4ec9b0',
+                        'WARNING': '#dcdcaa',
+                        'ERROR': '#f48771'
+                    }[log.level] || '#d4d4d4';
+                    
+                    line.innerHTML = `<span style="color: #858585;">${time}</span> ` +
+                        `<span style="color: ${levelColor}; font-weight: bold;">${log.level}</span> ` +
+                        `<span style="color: #9cdcfe;">${escapeHtml(log.logger)}</span> ` +
+                        `<span style="color: #d4d4d4;">${escapeHtml(log.message)}</span>`;
+                    container.appendChild(line);
+                });
+                
+                logsSinceIndex = data.next_index;
+                document.getElementById('logCount').textContent = `${data.total} logs`;
+                document.getElementById('updateTime').textContent = new Date().toLocaleTimeString();
+                
+                container.scrollTop = container.scrollHeight;
+            } catch (error) {
+                console.error('Log error:', error);
+            }
+        }
+        
+        function pauseLogs() {
+            logsPaused = !logsPaused;
+            document.getElementById('pauseLogsBtn').textContent = logsPaused ? '继续' : '暂停';
+            document.getElementById('logsStatus').textContent = logsPaused ? '已暂停' : 'Live';
+        }
+        
+        function clearLogs() {
+            document.getElementById('logsContainer').innerHTML = '';
+            logsSinceIndex = 0;
+        }
+        
+        function showMessage(msg, type, elementId) {
+            const el = document.getElementById(elementId);
+            el.textContent = msg;
+            el.className = `message show ${type}`;
+            if (type === 'success') {
+                setTimeout(() => el.classList.remove('show'), 3000);
+            }
+        }
+        
+        function escapeHtml(text) {
+            const div = document.createElement('div');
+            div.textContent = text;
+            return div.innerHTML;
+        }
+        
+        function logout() {
+            localStorage.removeItem('jwt_token');
+            window.location.href = '/admin/login';
+        }
+        
+        // 初始加载
+        loadAccounts();
+        
+        // 日志定时刷新
+        setInterval(() => {
+            if (currentPanel === 'logs') {
+                loadLogs();
+            }
+        }, 500);
+    </script>
+</body>
+</html>

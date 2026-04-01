@@ -1137,7 +1137,13 @@ from fastapi.responses import FileResponse
 from pathlib import Path
 
 @router.get("/logs")
-async def logs_page(admin: dict = Depends(verify_jwt_token)):
+async def logs_page(admin: str = Depends(get_current_admin)):
     """Serve logs viewer HTML page"""
     template_path = Path(__file__).parent.parent / "templates" / "logs.html"
+    return FileResponse(template_path, media_type="text/html")
+
+@router.get("/dashboard")
+async def dashboard_page(admin: str = Depends(get_current_admin)):
+    """Serve admin dashboard HTML page"""
+    template_path = Path(__file__).parent.parent / "templates" / "admin.html"
     return FileResponse(template_path, media_type="text/html")
